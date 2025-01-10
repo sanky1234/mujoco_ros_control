@@ -5,13 +5,15 @@ joint_state_controller:
 
 # Joint Trajectory Interface to MoveIt
 trajectory_controller:
-  type: effort_controllers/JointTrajectoryController
+  type: position_controllers/JointTrajectoryController
 
   joints:
-    - ball_joint
-
-  gains: #PID controllers for individual joints
-    ball_joint: {p: 200,  d: 1, i: 1, i_clamp: 1}
+    - robot1/joint1
+    - robot1/joint2
+    - robot1/joint3
+    - robot1/joint4
+    - robot1/joint5
+    - robot1/joint6
 
   constraints:
     goal_time: 0.5

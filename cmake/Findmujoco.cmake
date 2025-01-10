@@ -1,40 +1,36 @@
-
+# Find the MuJoCo header file
 find_path(mujoco_INCLUDE_DIR
-        NAMES mujoco.h
-        PATHS $ENV{HOME}/.mujoco/mjpro200/include
-        NO_DEFAULT_PATH
-        )
+    NAMES mujoco/mujoco.h
+    PATHS /opt/mujoco/include
+    NO_DEFAULT_PATH
+)
 
+# Find the MuJoCo library
 find_library(mujoco_LIBRARIES
-        NAMES libmujoco200.so
-        PATHS $ENV{HOME}/.mujoco/mjpro200/bin 
-        NO_DEFAULT_PATH
-        )
+    NAMES mujoco
+    PATHS /opt/mujoco/lib
+    NO_DEFAULT_PATH
+)
 
-#find_library(nvidia_LIBRARIES
-#        NAMES libGL.so
-#        PATHS /usr/lib/nvidia-390
-#        NO_DEFAULT_PATH
-#        )
-
+# Find the GLEW library (if needed)
 find_library(libglew_LIBRARIES
-        NAMES libglew.so 
-        PATHS $ENV{HOME}/.mujoco/mjpro200/bin
-        NO_DEFAULT_PATH
-        )
+    NAMES libGLEW.so
+    PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu/
+)
 
+# Check if all required components are found
 if (mujoco_LIBRARIES AND mujoco_INCLUDE_DIR AND libglew_LIBRARIES)
-    message("Mujoco library: ${mujoco_LIBRARIES}")
-#    message("nvidia library: ${nvidia_LIBRARIES}")
-    message("libglew library: ${libglew_LIBRARIES}")
-    message("Mujoco dir: ${mujoco_INCLUDE_DIR}")
+    message("MuJoCo library: ${mujoco_LIBRARIES}")
+    message("GLEW library: ${libglew_LIBRARIES}")
+    message("MuJoCo include directory: ${mujoco_INCLUDE_DIR}")
     set(FOUND_mujoco TRUE)
-else (mujoco_LIBRARIES AND mujoco_INCLUDE_DIR AND libglew_LIBRARIES)
+else()
     if (mujoco_FIND_REQUIRED)
-        message(FATAL_ERROR "Could not find mujoco!")
-    endif (mujoco_FIND_REQUIRED)
+        message("GLEW library: ${libglew_LIBRARIES}")
+
+        message(FATAL_ERROR "Could not find MuJoCo!")
+    endif()
     set(FOUND_mujoco FALSE)
-endif (mujoco_LIBRARIES AND mujoco_INCLUDE_DIR AND libglew_LIBRARIES)
+endif()
 
-
-mark_as_advanced(mujoco_INCLUDE_DIR mujoco_LIBRARIES FOUND_mujoco libglew_LIBRARIES glfw3_LIBRARIES)
+mark_as_advanced(mujoco_INCLUDE_DIR mujoco_LIBRARIES FOUND_mujoco libglew_LIBRARIES)

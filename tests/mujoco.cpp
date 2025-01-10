@@ -5,7 +5,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <mujoco.h>
+#include <mujoco/mujoco.h>
 
 /** @brief Implement non blocking mju_error */
 MJAPI void mju_error(const char *msg) {

@@ -6,8 +6,10 @@
 
 #include "stdio.h"
 #include <mutex>
-#include <mujoco.h>
-#include <glfw3.h>
+#include <common_robot_functions/Mujoco/mujoco_parser.h>
+#include <common_robot_functions/Transformations/transformation.h>
+
+#include <GLFW/glfw3.h>
 
 #include <ros/ros.h>
 #include <ros/package.h>
@@ -20,75 +22,16 @@
 
 std::unique_ptr<RobotHWMujoco> hw;
 std::unique_ptr<controller_manager::ControllerManager> cm;
-std::unique_ptr<ros::Time> start_time;
 
-
-// MuJoCo model and data
-mjModel *m = 0;
-mjData *d = 0;
-
-// MuJoCo visualization
-mjvScene scn;
-mjvCamera cam;
-mjvOption opt;
-mjrContext con;
-//mjvCamera cam;                      // abstract camera
-//mjvScene scn;                       // abstract scene
-//mjvOption opt;                      // visualization options
-//mjrContext con;                     // custom GPU context
-
-void cb_controller(const mjModel *m, mjData *d) {
-    hw->read(*d);
-    const float duration = d->time;
-
-    cm->update(*start_time + ros::Duration(duration), ros::Duration(m->opt.timestep));
-    hw->write(*d);
+void cb_controller(MujocoParser & m, const float time_step) {
+    hw->read();
+    const float duration = m.GetSimTime(false);
+    int32_t sec = static_cast<int32_t>(duration); // Extract seconds
+    int32_t nsec = static_cast<int32_t>((duration - sec) * 1e9);
+    cm->update(ros::Time(sec, nsec), ros::Duration(time_step));
+    hw->write();
 }
 
-void initVisual() {
-    // initialize visualization data structures
-    mjv_defaultCamera(&cam);
-    mjv_defaultOption(&opt);
-    mjv_defaultScene(&scn);
-    mjr_defaultContext(&con);
-
-    // create scene and context
-    mjv_makeScene(m, &scn, 2000);
-    mjr_makeContext(m, &con, 200);
-
-    // center and scale view
-    cam.lookat[0] = m->stat.center[0];
-    cam.lookat[1] = m->stat.center[1];
-    cam.lookat[2] = m->stat.center[2];
-    cam.distance = 1.5 * m->stat.extent;
-}
-
-void initGl() {
-    if (!glfwInit())
-        mju_error("Could not initialize GLFW");
-
-    // create invisible window, single-buffered
-    glfwWindowHint(GLFW_VISIBLE, 0);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_FALSE);
-    GLFWwindow *window = glfwCreateWindow(800, 800, "Invisible window", NULL, NULL);
-    if (!window)
-        mju_error("Could not create GLFW window");
-
-    // make context current
-    glfwMakeContextCurrent(window);
-
-}
-
-
-void render(mjrRect &viewport) {
-    std::cout << "Render" << std::endl;
-    // update abstract scene
-    mjv_updateScene(m, d, &opt, NULL, &cam, mjCAT_ALL, &scn);
-    std::cout << "Render1" << std::endl;
-    // render scene in offscreen buffer
-    mjr_render(viewport, &scn, &con);
-    std::cout << "Render3" << std::endl;
-}
 
 int main(int argc, char **argv) {
 
@@ -98,85 +41,121 @@ int main(int argc, char **argv) {
     ros::AsyncSpinner spinner(2);
     spinner.start();
 
+    bool verbose = false;
+    int window_width = 1400;
+    int window_height = 1000; 
+    bool hide_menus = false; 
+    mjtFontScale font_scale = mjFONTSCALE_200;
+    double azimuth = 170;
+    double distance = 5.0;
+    double elevation = -20.0;
+    Eigen::Vector3d lookat = Eigen::Vector3d(0.01,0.11,0.5);
+    std::vector<double> lookat_vec = {0.01,0.11,0.5};
+    bool transparent = false;
+    bool contactpoint = false;
+    float contactwidth = 0.0;
+    float contactheight = 0.0;
+    std::vector<float> contact_rgba = {};
+    bool joint = false;
+    float jointlength = 0.0;
+    float jointwidth = 0.0;
+    std::vector<float> joint_rgba = {};
+    int geomgroup_0 = 0;
+    int geomgroup_1 = 0;
+    int geomgroup_2 = 0;
+    bool update = false;
+    int maxgeom = 10000;
+
+    node.param<bool>("mujoco_sim/verbose", verbose, false);
+    node.param<int>("mujoco_sim/window_width", window_width, 1400);
+    node.param<int>("mujoco_sim/window_height", window_height, 1000);
+    node.param<bool>("mujoco_sim/hide_menus", hide_menus, false);
+    node.param<double>("mujoco_sim/azimuth", azimuth, 170);
+    node.param<double>("mujoco_sim/distance", distance, 5.0);
+    node.param<double>("mujoco_sim/elevation", elevation, -20.0);
+    node.param<std::vector<double>>("mujoco_sim/lookat", lookat_vec, {0.01,0.11,0.5});
+    node.param<bool>("mujoco_sim/transparent", transparent, false);
+    node.param<bool>("mujoco_sim/contactpoint", contactpoint, false);
+    node.param<float>("mujoco_sim/contactwidth", contactwidth, 0.0);
+    node.param<float>("mujoco_sim/contactheight", contactheight, 0.0);
+    node.param<std::vector<float>>("mujoco_sim/contact_rgba", contact_rgba, {});
+    node.param<bool>("mujoco_sim/joint", joint, false);
+    node.param<float>("mujoco_sim/jointlength", jointlength, 0.0);
+    node.param<float>("mujoco_sim/jointwidth", jointwidth, 0.0);
+    node.param<std::vector<float>>("mujoco_sim/joint_rgba", joint_rgba, {});
+    node.param<int>("mujoco_sim/geomgroup_0", geomgroup_0, 0);
+    node.param<int>("mujoco_sim/geomgroup_1", geomgroup_1, 0);
+    node.param<int>("mujoco_sim/geomgroup_2", geomgroup_2, 0);
+    node.param<bool>("mujoco_sim/update", update, false);
+    node.param<int>("mujoco_sim/maxgeom", maxgeom, 10000);
+
+    lookat = pose_eigen(lookat_vec[0],lookat_vec[1],lookat_vec[2]);
+
     const auto default_model_path = ros::package::getPath("mujoco_ros_control") + "/model/simple_robot.urdf";
     const auto model_path = node.param("model", default_model_path);
 
-    const auto key_path = std::string(getenv("HOME")) + "/.mujoco/mjkey.txt";
+    std::string test_model_path = "/home/sankalp/ws_spot_catching/src/papras-spot/papras_spot_demo/description/mujoco/spot_catching_update.xml";
 
-    if (!mj_activate(key_path.c_str())) {
-        ROS_ERROR_STREAM("Cannot activate mujoco with key: " << key_path);
-        return -1;
-    }
 
-    initGl();
-    char error[1000] = "";
-    m = mj_loadXML(model_path.c_str(), nullptr, error, 1000);
+    std::string window_name = "Mujoco Simulation";
 
-    if (!m) {
-        ROS_ERROR_STREAM("Cannot load model: " << model_path);
-        ROS_ERROR_STREAM(error);
-        return -1;
-    }
+    MujocoParser mujoco_parser(window_name, test_model_path, verbose);
+    
+    mujoco_parser.InitViewer(window_name, 
+                             window_width,
+                             window_height,
+                             hide_menus,
+                             font_scale, 
+                             azimuth,
+                             distance,
+                             elevation,
+                             lookat, 
+                             transparent, 
+                             contactpoint, 
+                             contactwidth,
+                             contactheight,
+                             contact_rgba, 
+                             joint, 
+                             jointlength,
+                             jointwidth,
+                             joint_rgba,
+                             geomgroup_0,
+                             geomgroup_1,
+                             geomgroup_2,
+                             update,
+                             maxgeom);
 
-    d = mj_makeData(m);
-    if (!d) {
-        ROS_ERROR_STREAM("Cannot make data structure for model.");
-        return -1;
-    }
 
-    // run one computation to initialize all fields
-//    initGl();
-    mj_step(m, d);
-    initVisual();
+    mujoco_parser.Reset(true);
 
-    hw.reset(new RobotHWMujoco(*m));
+    hw.reset(new RobotHWMujoco(&mujoco_parser));
     cm.reset(new controller_manager::ControllerManager(hw.get(), node));
+    ros::CallbackQueue queue;
 
-    start_time.reset(new ros::Time());
-    *start_time = ros::Time::now();
+    ros::TimerOptions timer_options(
+                                    ros::Duration(0.008), // 8ms
+                                    boost::bind(cb_controller, boost::ref(mujoco_parser), 0.008),
+                                    &queue);
+    
+    ros::Timer timer = node.createTimer(timer_options);
 
-    mjcb_control = cb_controller;
 
-    const auto timestep = ros::Duration(m->opt.timestep);
-    std::cout << m->opt.timestep << std::endl;
 
-//    auto sim_timer = node.createTimer(timestep, [&](const ros::TimerEvent &e) {
-//       std::cout << "Simulation" << std::endl;
-//       mj_step(m, d);
-//    });
+    while(ros::ok() && mujoco_parser.IsViewerAlive()){
+         mujoco_parser.Step();
 
-    // Render
-    mjr_setBuffer(mjFB_OFFSCREEN, &con);
-    if (con.currentBuffer != mjFB_OFFSCREEN) {
-        ROS_WARN_STREAM("Warning: offscreen rendering not supported, using default/window framebuffer");
-    }
+        if(mujoco_parser.LoopEvery(0,50, true)){
+            // current_joint_poses = mujoco_parser.GetQposJoints(joint_names);
 
-    // get size of active renderbuffer
-    mjrRect viewport = mjr_maxViewport(&con);
-//    int W = viewport.width;
-//    int H = viewport.height;
+            // mujoco_parser.PlotT(pr2t(pose_eigen(0,0,0), Eigen::Matrix3d::Identity()));
+            mujoco_parser.PlotTime(pose_eigen(0,0,1));
+            mujoco_parser.PlotContactInfo("", 0.005, 0.1, Eigen::Vector4d(1.0, 0.0, 0.0, 1.0), 0.02, true, false, false, false,"");
+            mujoco_parser.PlotJointAxis(0.1, 0.005, {}, 0.2);
+            mujoco_parser.PlotLinksBetweenBodies({"world"}, 0.001, Eigen::Vector4d(0.0,0.0,0.0,1), "");
+            mujoco_parser.Render();
 
-    std::mutex mutex;
-    const auto render_timer = node.createTimer(timestep * 180, [&mutex, &viewport](const ros::TimerEvent &e) {
-        std::lock_guard<std::mutex> guard(mutex);
-        render(viewport);
-    });
-
-    ros::waitForShutdown();
-
-    mj_deleteData(d);
-    mj_deleteModel(m);
-    mjr_freeContext(&con);
-    mjv_freeScene(&scn);
-    mj_deactivate();
-//    //free visualization storage
-//    mjv_freeScene(&scn);
-//    mjr_freeContext(&con);
-//
-//    // free MuJoCo model and data, deactivate
-//    mj_deleteModel(m);
-//    mj_deleteData(d);
-//    mj_deactivate();
+        }
+    }   
 
     return 0;
 }
