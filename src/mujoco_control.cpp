@@ -22,13 +22,16 @@
 
 std::unique_ptr<RobotHWMujoco> hw;
 std::unique_ptr<controller_manager::ControllerManager> cm;
+MujocoParser * mujoco_parser;
 
-void cb_controller(MujocoParser & m, const float time_step) {
+void cb_controller(const mjModel* m, mjData* d) {
     hw->read();
-    const float duration = m.GetSimTime(false);
+    const float duration = mujoco_parser->GetSimTime(false);
+    // ROS_INFO_STREAM("Duration: " << duration);
     int32_t sec = static_cast<int32_t>(duration); // Extract seconds
     int32_t nsec = static_cast<int32_t>((duration - sec) * 1e9);
-    cm->update(ros::Time(sec, nsec), ros::Duration(time_step));
+
+    cm->update(ros::Time(sec, nsec), ros::Duration(m->opt.timestep));
     hw->write();
 }
 
@@ -99,9 +102,9 @@ int main(int argc, char **argv) {
 
     std::string window_name = "Mujoco Simulation";
 
-    MujocoParser mujoco_parser(window_name, test_model_path, verbose);
+    mujoco_parser = new MujocoParser(window_name, test_model_path, verbose);
     
-    mujoco_parser.InitViewer(window_name, 
+    mujoco_parser->InitViewer(window_name, 
                              window_width,
                              window_height,
                              hide_menus,
@@ -126,33 +129,34 @@ int main(int argc, char **argv) {
                              maxgeom);
 
 
-    mujoco_parser.Reset(true);
+    mujoco_parser->Reset(true);
 
-    hw.reset(new RobotHWMujoco(&mujoco_parser));
+    hw.reset(new RobotHWMujoco(mujoco_parser));
     cm.reset(new controller_manager::ControllerManager(hw.get(), node));
     ros::CallbackQueue queue;
 
-    ros::TimerOptions timer_options(
-                                    ros::Duration(0.008), // 8ms
-                                    boost::bind(cb_controller, boost::ref(mujoco_parser), 0.008),
-                                    &queue);
+    // ros::TimerOptions timer_options(
+    //                                 ros::Duration(0.008), // 8ms
+    //                                 boost::bind(cb_controller, boost::ref(mujoco_parser), 0.008),
+    //                                 &queue);
     
-    ros::Timer timer = node.createTimer(timer_options);
+    // ros::Timer timer = node.createTimer(timer_options);
+
+    mjcb_control = cb_controller;
 
 
+    while(ros::ok() && mujoco_parser->IsViewerAlive()){
+         mujoco_parser->Step();
 
-    while(ros::ok() && mujoco_parser.IsViewerAlive()){
-         mujoco_parser.Step();
-
-        if(mujoco_parser.LoopEvery(0,50, true)){
+        if(mujoco_parser->LoopEvery(0,50, true)){
             // current_joint_poses = mujoco_parser.GetQposJoints(joint_names);
 
             // mujoco_parser.PlotT(pr2t(pose_eigen(0,0,0), Eigen::Matrix3d::Identity()));
-            mujoco_parser.PlotTime(pose_eigen(0,0,1));
-            mujoco_parser.PlotContactInfo("", 0.005, 0.1, Eigen::Vector4d(1.0, 0.0, 0.0, 1.0), 0.02, true, false, false, false,"");
-            mujoco_parser.PlotJointAxis(0.1, 0.005, {}, 0.2);
-            mujoco_parser.PlotLinksBetweenBodies({"world"}, 0.001, Eigen::Vector4d(0.0,0.0,0.0,1), "");
-            mujoco_parser.Render();
+            mujoco_parser->PlotTime(pose_eigen(0,0,1));
+            mujoco_parser->PlotContactInfo("", 0.005, 0.1, Eigen::Vector4d(1.0, 0.0, 0.0, 1.0), 0.02, true, false, false, false,"");
+            mujoco_parser->PlotJointAxis(0.1, 0.005, {}, 0.2);
+            mujoco_parser->PlotLinksBetweenBodies({"world"}, 0.001, Eigen::Vector4d(0.0,0.0,0.0,1), "");
+            mujoco_parser->Render();
 
         }
     }   
